@@ -11,5 +11,7 @@ data class FileAccessEvent(
     val eventType: String,
     val severity: AlertSeverity,
     val description: String,
+    val appName: String = "Unknown Process",
+    val packageName: String = "unknown.process",
     val timestamp: Long = System.currentTimeMillis()
 )

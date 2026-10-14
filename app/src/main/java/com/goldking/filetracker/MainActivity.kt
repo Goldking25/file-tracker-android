@@ -2,7 +2,6 @@ package com.goldking.filetracker
 
 import android.Manifest
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
@@ -19,14 +18,15 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Stop
-import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -47,10 +47,21 @@ class MainActivity : ComponentActivity() {
         setContent {
             val events by EventRepository.eventsFlow.collectAsState()
             val isMonitoring by EventRepository.isMonitoring.collectAsState()
+            var hasUsageAccess by remember { mutableStateOf(ProcessResolver.hasUsageStatsPermission(this)) }
+
+            val context = LocalContext.current
 
             FileTrackerScreen(
                 isMonitoring = isMonitoring,
+                hasUsageAccess = hasUsageAccess,
                 events = events,
+                onRequestUsageAccess = {
+                    val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
+                    startActivity(intent)
+                },
+                onRefreshUsageStatus = {
+                    hasUsageAccess = ProcessResolver.hasUsageStatsPermission(context)
+                },
                 onToggleMonitoring = {
                     if (isMonitoring) {
                         stopService(Intent(this, FileMonitorService::class.java))
@@ -62,6 +73,11 @@ class MainActivity : ComponentActivity() {
                 onClearLogs = { EventRepository.clearEvents() }
             )
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Refresh permissions state if user enabled it in settings
     }
 
     private fun checkAndRequestPermissions() {
@@ -88,7 +104,10 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun FileTrackerScreen(
     isMonitoring: Boolean,
+    hasUsageAccess: Boolean,
     events: List<FileAccessEvent>,
+    onRequestUsageAccess: () -> Unit,
+    onRefreshUsageStatus: () -> Unit,
     onToggleMonitoring: () -> Unit,
     onClearLogs: () -> Unit
 ) {
@@ -117,6 +136,48 @@ fun FileTrackerScreen(
                 .padding(innerPadding)
                 .padding(16.dp)
         ) {
+            // Usage Access Warning Banner if not enabled
+            if (!hasUsageAccess) {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = CardDefaults.cardColors(containerColor = Color(0xFFFFF3E0)),
+                    shape = RoundedCornerShape(8.dp)
+                ) {
+                    Column(modifier = Modifier.padding(12.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Info, contentDescription = null, tint = Color(0xFFE65100))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text(
+                                "App Attribution Required",
+                                fontWeight = FontWeight.Bold,
+                                color = Color(0xFFE65100),
+                                fontSize = 13.sp
+                            )
+                        }
+                        Spacer(modifier = Modifier.height(4.dp))
+                        Text(
+                            "To show WHICH app or process touched/copied each file, grant Usage Access in Settings.",
+                            fontSize = 12.sp,
+                            color = Color(0xFF5D4037)
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Row {
+                            Button(
+                                onClick = onRequestUsageAccess,
+                                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFE65100))
+                            ) {
+                                Text("Grant Usage Access", fontSize = 12.sp)
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            OutlinedButton(onClick = onRefreshUsageStatus) {
+                                Text("Refresh", fontSize = 12.sp)
+                            }
+                        }
+                    }
+                }
+                Spacer(modifier = Modifier.height(12.dp))
+            }
+
             // Stats Row
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -232,6 +293,21 @@ fun EventItemCard(event: FileAccessEvent) {
                         text = timeFormat.format(Date(event.timestamp)),
                         fontSize = 11.sp,
                         color = Color.Gray
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(4.dp))
+                // Responsible Process & Package Badge
+                Surface(
+                    color = if (isRed) Color(0xFFFFCDD2) else Color(0xFFFFF9C4),
+                    shape = RoundedCornerShape(4.dp)
+                ) {
+                    Text(
+                        text = "App: ${event.appName} (${event.packageName})",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = if (isRed) Color(0xFFB71C1C) else Color(0xFF7F4B00),
+                        modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                     )
                 }
 

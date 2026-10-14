@@ -22,7 +22,7 @@ class FileMonitorService : Service() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
-        startForeground(1001, buildNotification("File Shield active - Monitoring storage events"))
+        startForeground(1001, buildNotification("File Shield active - Monitoring storage & process events"))
         startWatching()
         registerClipboardWatcher()
         EventRepository.setMonitoring(true)
@@ -81,11 +81,17 @@ class FileMonitorService : Service() {
             if (clip != null && clip.itemCount > 0) {
                 val item = clip.getItemAt(0)
                 val textSnippet = item.text?.toString() ?: item.uri?.toString() ?: "Binary/Media"
+                val eventTime = System.currentTimeMillis()
+                val (appName, packageName) = ProcessResolver.getActivePackage(this, eventTime)
+
                 val event = FileAccessEvent(
                     filePath = item.uri?.toString() ?: "System Clipboard",
                     eventType = "DATA_COPIED_CLIPBOARD",
                     severity = AlertSeverity.RED,
-                    description = "Data or file copied from an app to clipboard: ${textSnippet.take(40)}"
+                    description = "Data or file copied from an app to clipboard: ${textSnippet.take(40)}",
+                    appName = appName,
+                    packageName = packageName,
+                    timestamp = eventTime
                 )
                 EventRepository.addEvent(event)
                 pushAlertNotification(event)
@@ -108,8 +114,8 @@ class FileMonitorService : Service() {
 
         val alertNotif = NotificationCompat.Builder(this, alertChannelId)
             .setSmallIcon(android.R.drawable.stat_notify_error)
-            .setContentTitle("RED FLAG: Unauthorized File Event")
-            .setContentText("${event.description} - ${event.filePath.substringAfterLast('/')}")
+            .setContentTitle("RED FLAG: [${event.appName}] Unauthorized Access")
+            .setContentText("${event.description} - (${event.packageName})")
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
             .build()
